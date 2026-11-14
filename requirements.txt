@@ -1,0 +1,21 @@
+fastapi
+uvicorn[standard]
+
+langgraph>=1.0.7              # Workflow orchestration
+langchain>=0.2.0              # LLM application framework
+langchain-community           # Community integrations
+langchain-text-splitters      # Document chunking utilities
+google-genai 
+langchain-google-genai
+langchain-groq
+sentence-transformers         # Embedding generation
+faiss-cpu                     # Vector similarity search
+rank-bm25                     # Keyword-based retrieval
+PyMuPDF                       # PDF parsing/rendering
+
+
+openpyxl                      # Excel export generation
+streamlit>=1.28.1             # Web application UI
+python-dotenv                 # Environment variable management
+numpy                         # Numerical operations
+pandas                        # Structured data processing
