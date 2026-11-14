@@ -13,7 +13,7 @@ faiss-cpu                     # Vector similarity search
 rank-bm25                     # Keyword-based retrieval
 PyMuPDF                       # PDF parsing/rendering
 
-
+supabase
 openpyxl                      # Excel export generation
 streamlit>=1.28.1             # Web application UI
 python-dotenv                 # Environment variable management

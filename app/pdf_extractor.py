@@ -6,15 +6,13 @@ def extract_pages(pdf_path: str) -> list[dict]:
     """
     Extract text from every PDF page.
 
-    Returns:
-        List of dictionaries containing:
-        - page_number: 1-based page number
-        - text: extracted page text
-        - character_count: number of extracted characters
-        - is_scanned: whether the page likely contains no extractable text
+    Returns a list of dicts:
+    - page: 1-based page number
+    - text: extracted page text
+    - character_count: number of extracted characters
+    - is_scanned: True if the page likely has no extractable text
     """
-
-    pdf_path = Path("tests/samples/sample.pdf")
+    pdf_path = Path(pdf_path)
 
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
@@ -31,14 +29,13 @@ def extract_pages(pdf_path: str) -> list[dict]:
                 raise ValueError("Encrypted PDFs are not supported.")
 
             for page_index, page in enumerate(document):
-
                 text = page.get_text("text").strip()
 
                 extracted_pages.append({
-                    "page_number": page_index + 1,
+                    "page": page_index + 1,
                     "text": text,
                     "character_count": len(text),
-                    "is_scanned": len(text) < 20
+                    "is_scanned": len(text) < 20,
                 })
 
     except pymupdf.FileDataError as error:
@@ -47,10 +44,9 @@ def extract_pages(pdf_path: str) -> list[dict]:
     return extracted_pages
 
 
-pages = extract_pages("sample.pdf")
-
-for page in pages:
-    print(f"\n--- Page {page['page_number']} ---")
-    print(f"Characters: {page['character_count']}")
-    print(f"Scanned/Low-text: {page['is_scanned']}")
-    print(page["text"][:300])
+if __name__ == "__main__":
+    for page in extract_pages("tests/samples/sample.pdf"):
+        print(f"\n--- Page {page['page']} ---")
+        print(f"Characters: {page['character_count']}")
+        print(f"Scanned/Low-text: {page['is_scanned']}")
+        print(page["text"][:300])
