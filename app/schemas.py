@@ -1,7 +1,7 @@
 from typing import Optional
 from pydantic import BaseModel,Field
 from datetime import date
-
+from typing import Literal 
 
 
 
@@ -176,3 +176,72 @@ class ComplianceFinding(BaseModel):
 class ComplianceAnalysis(BaseModel):
     overall_assessment: str
     findings: list[ComplianceFinding] = Field(default_factory=list)
+
+
+
+class ConsolidatedFinding(BaseModel):
+    finding_id: str
+    source_agents: list[str]
+    category: str
+    risk_level: Literal["low", "medium", "high", "critical"]
+
+    finding: str
+    evidence_quote: str
+    page_number: int
+    rationale: str
+    recommendation: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+    financial_impact: str | None = None
+    applicable_requirement: str | None = None
+
+    requires_review: bool = False
+    review_reason: str | None = None    
+
+class CategoryRiskScore(BaseModel):
+    category: str
+    score: int = Field(ge=0)
+    finding_count: int = Field(ge=0)
+    risk_level: Literal["low", "medium", "high"]    
+
+class AgentCoverage(BaseModel):
+    agent_name: str
+    status: Literal["completed", "failed", "skipped"]
+    finding_count: int = Field(ge=0)
+    error: str | None = None
+
+
+class PriorityRecommendation(BaseModel):
+    finding_id: str
+    priority_rank: int = Field(ge=1)
+    recommendation: str
+
+
+class AssessmentSummary(BaseModel):
+    executive_summary: str
+    priorities: list[PriorityRecommendation] = Field(default_factory=list)
+
+
+
+
+
+# defining a final assessment object that consolidates all findings,risk scores and recommendations from all agents 
+class RiskAssessment(BaseModel):
+    overall_risk_level: Literal["low", "medium", "high"]
+    overall_score: int = Field(ge=0)
+
+    category_scores: list[CategoryRiskScore] = Field(
+        default_factory=list
+    )
+
+    ranked_findings: list[ConsolidatedFinding] = Field(
+        default_factory=list
+    )
+
+    summary: AssessmentSummary
+
+    review_items: list[str] = Field(default_factory=list)
+
+    coverage: list[AgentCoverage] = Field(
+        default_factory=list
+    )
