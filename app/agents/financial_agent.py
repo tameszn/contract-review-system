@@ -75,6 +75,10 @@ def analyze_financial_terms(
     11. Confidence must be between 0 and 1.
     12. Recommendations must be practical and not presented
         as legal or financial advice.
+    13.The risk_level MUST be exactly one of:
+        low, medium, high, critical.
+    
+        Do not use alternative labels such as moderate, severe, or extreme.    
 
     CONTRACT PASSAGES:
 

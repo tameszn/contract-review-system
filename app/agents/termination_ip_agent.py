@@ -71,6 +71,10 @@ def analyze_termination_ip(
     - Use risk levels: low, medium, high or critical.
     - Confidence must be between 0.0 and 1.0.
     - If no meaningful risks are found, return an empty findings list.
+    -The risk_level MUST be exactly one of:
+        low, medium, high, critical.
+    
+        Do not use alternative labels such as moderate, severe, or extreme.
 
     Provide an overall assessment and structured findings.
     """

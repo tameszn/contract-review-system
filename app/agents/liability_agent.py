@@ -58,6 +58,10 @@ def analyze_liability(
     8. Risk levels must be low, medium, high, or critical.
     9. Confidence must be between 0 and 1.
     10. Provide practical recommendations without presenting them as legal advice.
+    11.The risk_level MUST be exactly one of:
+        low, medium, high, critical.
+    
+        Do not use alternative labels such as moderate, severe, or extreme.
 
     CONTRACT PASSAGES:
     {context}
