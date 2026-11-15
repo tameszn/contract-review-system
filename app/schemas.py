@@ -87,3 +87,92 @@ class LiabilityAnalysis(BaseModel):
         description="A concise overall assessment of the contract's liability provisions."
     )
     findings: list[LiabilityFinding] = Field(default_factory=list)
+
+
+class FinancialFinding(BaseModel):
+    financial_category: str = Field(
+        description=(
+            "Category such as payment terms, late fees, "
+            "penalties, taxes, deposits, refunds, or price adjustments."
+        )
+    )
+
+    risk_level: str = Field(
+        description="Risk level: low, medium, high, or critical."
+    )
+
+    finding: str = Field(
+        description="A concise explanation of the identified financial issue."
+    )
+
+    evidence_quote: str = Field(
+        description="Exact quotation copied from the contract."
+    )
+
+    page_number: int = Field(
+        description="Page number containing the quoted evidence."
+    )
+
+    financial_impact: str = Field(
+        description=(
+            "Explain the potential monetary or commercial "
+            "impact of this provision."
+        )
+    )
+
+    rationale: str = Field(
+        description="Explain why this provision deserves attention."
+    )
+
+    recommendation: str = Field(
+        description="Practical recommendation to address the issue."
+    )
+
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Confidence in the finding based on available evidence."
+    )
+
+
+class FinancialAnalysis(BaseModel):
+    overall_assessment: str = Field(
+        description="Overall assessment of the contract's financial terms."
+    )
+
+    findings: list[FinancialFinding] = Field(
+        default_factory=list
+    )
+
+class TerminationIPFinding(BaseModel):
+    issue_category: str
+    risk_level: str
+    finding: str
+    evidence_quote: str
+    page_number: int
+    rationale: str
+    recommendation: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class TerminationIPAnalysis(BaseModel):
+    overall_assessment: str
+    findings: list[TerminationIPFinding] = Field(default_factory=list)
+
+
+
+class ComplianceFinding(BaseModel):
+    compliance_category: str
+    risk_level: str
+    finding: str
+    evidence_quote: str
+    page_number: int
+    applicable_requirement: str
+    rationale: str
+    recommendation: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class ComplianceAnalysis(BaseModel):
+    overall_assessment: str
+    findings: list[ComplianceFinding] = Field(default_factory=list)
