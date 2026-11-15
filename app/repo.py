@@ -59,15 +59,45 @@ def save_contract(filename, pages, chunks):
 
         raise
 
-def save_analysis_result(contract_id, analysis_type, result):
+def save_analysis_result(contract_id, analysis_type, result, run_id=None):
+    """
+    Save an analysis result.
+
+    When run_id is supplied, repeated saves of the same analysis type
+    within that run update the existing record instead of duplicating it.
+
+    A new run_id represents a new execution and preserves run history.
+    """
     supabase = get_supabase_client()
 
     result_data = result.model_dump(mode="json")
 
-    response = supabase.table("analysis_results").insert({
+    record = {
         "contract_id": contract_id,
         "analysis_type": analysis_type,
-        "result": result_data
-    }).execute()
+        "result": result_data,
+    }
 
-    return response.data[0]["id"]    
+    if run_id is not None:
+        record["run_id"] = str(run_id)
+
+        response = (
+            supabase.table("analysis_results")
+            .upsert(
+                record,
+                on_conflict="run_id,analysis_type"
+            )
+            .execute()
+        )
+    else:
+        # Backward compatibility for existing standalone callers.
+        response = (
+            supabase.table("analysis_results")
+            .insert(record)
+            .execute()
+        )
+
+    if not response.data:
+        raise RuntimeError("Analysis result persistence returned no record.")
+
+    return response.data[0]["id"]
