@@ -5,7 +5,7 @@ from typing import Any, TypedDict
 class AssessmentGraphState(TypedDict, total=False):
     # Contract identifier
     contract_id: str
-
+    run_id : str
     # Validated specialist analyses
     liability_analysis: Any
     financial_analysis: Any
@@ -33,4 +33,9 @@ class AssessmentGraphState(TypedDict, total=False):
     # Final outputs
     assessment: Any
     result_id: str
+    execution_metadata: dict
+
+    
+    gate_decision: str
+    retry_round: int
     execution_metadata: dict

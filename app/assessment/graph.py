@@ -1,123 +1,142 @@
 
+from uuid import uuid4
+
 from langgraph.graph import StateGraph, START, END
 
 from app.assessment.graph_state import AssessmentGraphState
-
 from app.assessment.pipeline import (
-    run_agent_with_validation,
     AGENT_CONFIG,
+    MAX_AGENT_RETRIES,
+    run_agent_with_validation,
 )
-
 from app.assessment.consolidator import consolidate_findings
 from app.assessment.builder import build_risk_assessment
-
 from app.schemas import AgentCoverage
-from app.repo import save_analysis_result
+
+from app.repo import (
+    save_analysis_result,
+    start_assessment_run,
+    finish_assessment_run,
+)
+
+AGENT_KEYS = {
+    "liability": "liability",
+    "financial": "financial",
+    "termination_ip": "termination_ip",
+    "compliance": "compliance",
+}
 
 
-# --------------------------------------------------
-# 1. Specialist agent nodes
-# --------------------------------------------------
+def make_agent_node(agent_name):
+    def agent_node(state: AssessmentGraphState):
+        result = run_agent_with_validation(
+            agent_name=agent_name,
+            contract_id=state["contract_id"],
+            run_id=state["run_id"],
+            max_retries=0,
+        )
+        return {
+            f"{agent_name}_analysis": result["analysis"],
+            f"{agent_name}_status": result["status"],
+            f"{agent_name}_error": result["error"],
+            f"{agent_name}_metadata": result["metadata"],
+        }
+    return agent_node
 
-def run_liability_node(state: AssessmentGraphState) -> dict:
-    analysis, status, error, metadata = run_agent_with_validation(
-        state["contract_id"],
-        "liability",
-        AGENT_CONFIG["liability"],
-    )
 
-    return {
-        "liability_analysis": analysis,
-        "liability_status": status,
-        "liability_error": error,
-        "liability_metadata": metadata,
+def quality_gate_node(state: AssessmentGraphState):
+    statuses = [
+        state.get(f"{name}_status", "failed")
+        for name in AGENT_KEYS
+    ]
+    retry_round = state.get("retry_round", 0)
+
+    if all(status == "completed" for status in statuses):
+        decision = "continue"
+    elif retry_round < 1:
+        decision = "retry"
+    else:
+        decision = "partial"
+
+    return {"gate_decision": decision}
+
+
+def route_quality_gate(state: AssessmentGraphState):
+    return state["gate_decision"]
+
+
+def retry_failed_agents_node(state: AssessmentGraphState):
+    updates = {}
+
+    for agent_name in AGENT_KEYS:
+        status_key = f"{agent_name}_status"
+
+        if state.get(status_key) != "failed":
+            continue
+
+        previous_metadata = state.get(f"{agent_name}_metadata", {})
+
+        result = run_agent_with_validation(
+            agent_name=agent_name,
+            contract_id=state["contract_id"],
+            run_id=state["run_id"],
+            max_retries=max(0, MAX_AGENT_RETRIES - 1),
+        )
+
+        retry_metadata = result["metadata"]
+        retry_metadata["attempts"] += previous_metadata.get("attempts", 0)
+        retry_metadata["max_attempts"] = MAX_AGENT_RETRIES + 1
+        retry_metadata["attempt_errors"] = (
+            previous_metadata.get("attempt_errors", [])
+            + retry_metadata.get("attempt_errors", [])
+        )
+
+        updates.update({
+            f"{agent_name}_analysis": result["analysis"],
+            f"{agent_name}_status": result["status"],
+            f"{agent_name}_error": result["error"],
+            f"{agent_name}_metadata": retry_metadata,
+        })
+
+    updates["retry_round"] = state.get("retry_round", 0) + 1
+    return updates
+
+
+def finalize_assessment_node(state: AssessmentGraphState):
+    analyses = {
+        name: state.get(f"{name}_analysis", AGENT_CONFIG[name]["empty"]())
+        for name in AGENT_KEYS
     }
 
-
-def run_financial_node(state: AssessmentGraphState) -> dict:
-    analysis, status, error, metadata = run_agent_with_validation(
-        state["contract_id"],
-        "financial",
-        AGENT_CONFIG["financial"],
-    )
-
-    return {
-        "financial_analysis": analysis,
-        "financial_status": status,
-        "financial_error": error,
-        "financial_metadata": metadata,
-    }
-
-
-def run_termination_ip_node(state: AssessmentGraphState) -> dict:
-    analysis, status, error, metadata = run_agent_with_validation(
-        state["contract_id"],
-        "termination_ip",
-        AGENT_CONFIG["termination_ip"],
-    )
-
-    return {
-        "termination_ip_analysis": analysis,
-        "termination_ip_status": status,
-        "termination_ip_error": error,
-        "termination_ip_metadata": metadata,
-    }
-
-
-def run_compliance_node(state: AssessmentGraphState) -> dict:
-    analysis, status, error, metadata = run_agent_with_validation(
-        state["contract_id"],
-        "compliance",
-        AGENT_CONFIG["compliance"],
-    )
-
-    return {
-        "compliance_analysis": analysis,
-        "compliance_status": status,
-        "compliance_error": error,
-        "compliance_metadata": metadata,
-    }
-
-
-# --------------------------------------------------
-# 2. Final assessment node
-# --------------------------------------------------
-
-def finalize_assessment_node(
-    state: AssessmentGraphState,
-) -> dict:
-
-    agent_names = [
-        "liability",
-        "financial",
-        "termination_ip",
-        "compliance",
+    coverage = [
+        AgentCoverage(
+            agent_name=name,
+            status=state.get(f"{name}_status", "failed"),
+            finding_count=len(analyses[name].findings),
+            error=state.get(f"{name}_error"),
+        )
+        for name in AGENT_KEYS
     ]
 
-    coverage = []
+    completed_agents = [
+        item.agent_name for item in coverage
+        if item.status == "completed"
+    ]
+    failed_agents = [
+        item.agent_name for item in coverage
+        if item.status == "failed"
+    ]
 
-    for agent_name in agent_names:
-        coverage.append(
-            AgentCoverage(
-                agent_name=agent_name,
-                status=state[f"{agent_name}_status"],
-                finding_count=0,
-                error=state.get(f"{agent_name}_error"),
-            )
-        )
-
-    # Stop if every specialist failed.
-    if all(item.status == "failed" for item in coverage):
+    if not completed_agents:
         raise RuntimeError(
-            "Unified assessment aborted: all specialist agents failed."
+            "Assessment aborted: all specialist agents failed."
         )
 
-    # Consolidate only validated analyses.
     findings = consolidate_findings(
-        liability=state["liability_analysis"],
-        financial=state["financial_analysis"],
-        termination_ip=state["termination_ip_analysis"],
-        compliance=state["compliance_analysis"],
+        liability=analyses["liability"],
+        financial=analyses["financial"],
+        termination_ip=analyses["termination_ip"],
+        compliance=analyses["compliance"],
     )
 
     assessment = build_risk_assessment(
@@ -125,46 +144,39 @@ def finalize_assessment_node(
         coverage=coverage,
     )
 
-    # Clearly disclose incomplete agent coverage.
-    failed_agents = [
-        item.agent_name
-        for item in assessment.coverage
-        if item.status == "failed"
-    ]
-
     if failed_agents:
-        warning = (
-            " Assessment coverage is incomplete. Failed specialist "
-            "agents: "
+        assessment.review_items.append(
+            "Partial assessment: failed agents after retry: "
             + ", ".join(failed_agents)
-            + ". Scores and findings reflect only successfully "
-              "completed agents."
+            + ". Review agent coverage before relying on this assessment."
         )
 
-        updated_summary = assessment.summary.model_copy(
-            update={
-                "executive_summary": (
-                    assessment.summary.executive_summary + warning
-                )
-            }
-        )
-
-        assessment = assessment.model_copy(
-            update={"summary": updated_summary}
-        )
-
-    # Persist the final assessment.
     result_id = save_analysis_result(
         contract_id=state["contract_id"],
         analysis_type="risk_assessment",
         result=assessment,
+        run_id=state["run_id"],
     )
 
+    agent_metadata = {
+        name: state.get(f"{name}_metadata", {})
+        for name in AGENT_KEYS
+    }
+
     execution_metadata = {
-        "liability": state["liability_metadata"],
-        "financial": state["financial_metadata"],
-        "termination_ip": state["termination_ip_metadata"],
-        "compliance": state["compliance_metadata"],
+        "run_id": state["run_id"],
+        "gate_decision": state.get("gate_decision"),
+        "retry_round": state.get("retry_round", 0),
+        "agent_statuses": {
+            item.agent_name: item.status for item in coverage
+        },
+        "completed_agents": completed_agents,
+        "failed_agents": failed_agents,
+        "agent_metadata": agent_metadata,
+        "total_attempts": sum(
+            metadata.get("attempts", 0)
+            for metadata in agent_metadata.values()
+        ),
     }
 
     return {
@@ -174,55 +186,75 @@ def finalize_assessment_node(
     }
 
 
-# --------------------------------------------------
-# 3. Construct the graph
-# --------------------------------------------------
-
 def build_assessment_graph():
     graph = StateGraph(AssessmentGraphState)
 
-    graph.add_node("liability", run_liability_node)
-    graph.add_node("financial", run_financial_node)
-    graph.add_node("termination_ip", run_termination_ip_node)
-    graph.add_node("compliance", run_compliance_node)
+    for agent_name in AGENT_KEYS:
+        graph.add_node(agent_name, make_agent_node(agent_name))
+
+    graph.add_node("quality_gate", quality_gate_node)
+    graph.add_node("retry_failed_agents", retry_failed_agents_node)
     graph.add_node("finalize", finalize_assessment_node)
 
-    # Fan out: all four specialist agents can execute in parallel.
-    graph.add_edge(START, "liability")
-    graph.add_edge(START, "financial")
-    graph.add_edge(START, "termination_ip")
-    graph.add_edge(START, "compliance")
+    for agent_name in AGENT_KEYS:
+        graph.add_edge(START, agent_name)
 
-    # Fan in: finalize only after all four branches finish.
-    graph.add_edge("liability", "finalize")
-    graph.add_edge("financial", "finalize")
-    graph.add_edge("termination_ip", "finalize")
-    graph.add_edge("compliance", "finalize")
+    graph.add_edge(list(AGENT_KEYS), "quality_gate")
 
+    graph.add_conditional_edges(
+        "quality_gate",
+        route_quality_gate,
+        {
+            "retry": "retry_failed_agents",
+            "continue": "finalize",
+            "partial": "finalize",
+        },
+    )
+
+    graph.add_edge("retry_failed_agents", "quality_gate")
     graph.add_edge("finalize", END)
 
     return graph.compile()
 
 
-# --------------------------------------------------
-# 4. Public execution function
-# --------------------------------------------------
 
-assessment_graph = build_assessment_graph()
+def run_graph_assessment(contract_id: str):
+    run_id = str(uuid4())
+    start_assessment_run(contract_id, run_id)
 
+    try:
+        result = build_assessment_graph().invoke({
+            "contract_id": contract_id,
+            "run_id": run_id,
+            "retry_round": 0,
+        })
 
-def run_graph_assessment(contract_id: str) -> dict:
-    if not contract_id or not contract_id.strip():
-        raise ValueError("A valid contract_id is required.")
+        metadata = result["execution_metadata"]
+        failed_agents = metadata.get("failed_agents", [])
+        status = "partial" if failed_agents else "completed"
 
-    initial_state: AssessmentGraphState = {
-        "contract_id": contract_id,
-    }
+        finish_assessment_run(
+            run_id=run_id,
+            status=status,
+            execution_metadata=metadata,
+            gate_decision=metadata.get("gate_decision"),
+        )
 
-    result = assessment_graph.invoke(initial_state)
+        return {
+            "assessment": result["assessment"],
+            "result_id": result["result_id"],
+            "execution_metadata": metadata,
+        }
 
-    return {
-        "assessment": result["assessment"],
-        "result_id": result["result_id"],
-        "execution_metadata": result["execution_metadata"],
-    }
+    except Exception as exc:
+        finish_assessment_run(
+            run_id=run_id,
+            status="failed",
+            execution_metadata={
+                "run_id": run_id,
+                "failure": str(exc),
+            },
+            error=str(exc),
+        )
+        raise
+

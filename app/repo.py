@@ -1,5 +1,5 @@
 from app.database import get_supabase_client
-
+from datetime import datetime, timezone
 
 def save_contract(filename, pages, chunks):
     supabase = get_supabase_client()
@@ -101,3 +101,45 @@ def save_analysis_result(contract_id, analysis_type, result, run_id=None):
         raise RuntimeError("Analysis result persistence returned no record.")
 
     return response.data[0]["id"]
+
+
+# run logs
+
+
+def start_assessment_run(contract_id: str, run_id: str):
+    supabase = get_supabase_client()
+    response = supabase.table("assessment_runs").insert({
+        "run_id": run_id,
+        "contract_id": contract_id,
+        "status": "running",
+    }).execute()
+
+    if not response.data:
+        raise RuntimeError("Failed to create assessment run log.")
+
+    return response.data[0]
+
+
+def finish_assessment_run(
+    run_id: str,
+    status: str,
+    execution_metadata: dict,
+    gate_decision: str | None = None,
+    error: str | None = None,
+):
+    if status not in {"completed", "partial", "failed"}:
+        raise ValueError(f"Invalid final run status: {status}")
+
+    supabase = get_supabase_client()
+    response = supabase.table("assessment_runs").update({
+        "status": status,
+        "gate_decision": gate_decision,
+        "execution_metadata": execution_metadata,
+        "error": error,
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("run_id", run_id).execute()
+
+    if not response.data:
+        raise RuntimeError(f"Failed to finalize run log: {run_id}")
+
+    return response.data[0]
