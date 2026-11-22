@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from app.theme import inject_theme   # with the other app.* imports
+from app.theme import inject_theme, render_hero   
 
 
 inject_theme()                        # immediately after set_page_config
@@ -24,8 +24,9 @@ st.set_page_config(
     layout="wide",
 )
 inject_theme()   
+render_hero()
 
-st.title("📄 Contract iQ")
+st.subheader("Every clause. Every risk. Every page cited")
 st.write("AI-powered Contract Intelligence and Review Platform")
 
 st.divider()
