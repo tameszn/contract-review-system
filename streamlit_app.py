@@ -4,6 +4,11 @@ from pathlib import Path
 
 import streamlit as st
 
+from app.theme import inject_theme   # with the other app.* imports
+
+
+inject_theme()                        # immediately after set_page_config
+
 from app.pdf_extractor import extract_pages
 from app.chunking import build_chunks
 from app.repo import save_contract, save_analysis_result
@@ -18,6 +23,7 @@ st.set_page_config(
     page_icon="📄",
     layout="wide",
 )
+inject_theme()   
 
 st.title("📄 Contract iQ")
 st.write("AI-powered Contract Intelligence and Review Platform")

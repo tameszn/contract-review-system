@@ -41,7 +41,7 @@ class ContractMetadata(BaseModel):
 
 
 class ExtractedClause(BaseModel):
-    clause_type: str
+    clause_type: Optional[str] = None
     clause_title: Optional[str] = None
     clause_text: str
     page_number: int
