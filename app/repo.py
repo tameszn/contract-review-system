@@ -1,8 +1,11 @@
 from app.database import get_supabase_client
 from datetime import datetime, timezone
+from app.embeddings import generate_embeddings
+
 
 def save_contract(filename, pages, chunks):
     supabase = get_supabase_client()
+    contract_id = None
 
     try:
         # 1. Save contract metadata
@@ -31,16 +34,26 @@ def save_contract(filename, pages, chunks):
                 page_records
             ).execute()
 
-        # 3. Save chunks
+        # 3. Generate embeddings for all chunks
+        chunk_texts = [chunk.text for chunk in chunks]
+        embeddings = generate_embeddings(chunk_texts)
+
+        if len(embeddings) != len(chunks):
+            raise ValueError("Embedding count does not match chunk count.")
+
+        # 4. Save chunks with their embeddings
         chunk_records = [
             {
                 "contract_id": contract_id,
                 "page_number": chunk.page,
                 "chunk_index": index,
                 "content": chunk.text,
-                "section": chunk.section
+                "section": chunk.section,
+                "embedding": embedding
             }
-            for index, chunk in enumerate(chunks)
+            for index, (chunk, embedding) in enumerate(
+                zip(chunks, embeddings)
+            )
         ]
 
         if chunk_records:
@@ -51,13 +64,14 @@ def save_contract(filename, pages, chunks):
         return contract_id
 
     except Exception:
-        # Remove partially saved contract and its dependent records
-        if "contract_id" in locals():
+        # Remove partially saved contract and dependent records
+        if contract_id is not None:
             supabase.table("contracts").delete().eq(
                 "id", contract_id
             ).execute()
 
         raise
+
 
 def save_analysis_result(contract_id, analysis_type, result, run_id=None):
     """
